@@ -1,0 +1,343 @@
+Import libraries and read data
+
+import pandas as pd
+import numpy as np
+import geopy
+from geopy.geocoders import Nominatim
+import requests
+from pandas.io.json import json_normalize
+import folium
+import seaborn as sns
+from matplotlib import pyplot as plt
+import matplotlib.cm as cm
+import matplotlib.colors as colors
+from sklearn.cluster import KMeans
+from IPython.display import Image
+
+# Read files
+shanghai_data=pd.read_excel("D:\Learning\Applied Data Science\Course 4 Applied Data Science Capstone\Week 4 and 5 Project\Shanghai Neighborhood.xlsx")
+shanghai_econ=pd.read_csv("D:\Learning\Applied Data Science\Course 4 Applied Data Science Capstone\Week 4 and 5 Project\Shanghai District.csv")
+
+# Print top 5 rows of shanghai_econ
+shanghai_econ.head()
+# shanghai_econ has economic and demographic information for each district in Shanghai
+
+
+# Print all rows of shanghai_data
+shanghai_data
+# shanghai_data has district and prominent neighborhood information of Shanghai
+# No open sources have ever discussed and defined neighborhoods in Shanghai. I built this list by myself
+
+geolocator=Nominatim(user_agent="shanghai_explorer")
+
+# Attach string ', Shanghai' to Neighborhood column
+shanghai_data['Neighborhood']=shanghai_data['Neighborhood']+', Shanghai'
+# This is for the location precesion concern
+
+# Get coordinates
+shanghai_data['Coordinates']=shanghai_data['Neighborhood'].apply(geolocator.geocode).apply(lambda x: (x.latitude, x.longitude))
+
+# Seperate Coordinates column into latitude and longitude columns
+shanghai_data[['Latitude','Longitude']]=shanghai_data['Coordinates'].apply(pd.Series)
+
+# Drop Coordinates column
+shanghai_data.drop(['Coordinates'],axis=1,inplace=True)
+
+# Check top 10 rows
+shanghai_data.head(10)
+
+# Get Shanghai city's latitude/longitude information
+address='Shanghai'
+location=geolocator.geocode(address)
+latitude=location.latitude
+longitude=location.longitude
+
+# Base map
+map_shanghai_neighborhoods=folium.Map(location=[latitude, longitude], zoom_start=11,tiles="OpenStreetMap")
+
+# Color by district
+Districts=['Pudong','Huangpu','Xuhui','Changning',"Jing'an",
+           'Putuo','Hongkou','Yangpu','Minhang','Baoshan','Jiading',
+           'Jinshan','Songjiang','Qingpu','Fengxian','Chongming']
+
+rainbow=['#00008B','#008B8B','#B8860B','#A9A9A9','#006400','#BDB76B',
+         '#8B008B','#556B2F','#FF8C00','#9932CC','#8B0000','#E9967A',
+         '#8FBC8F','#483D8B','#2F4F4F','#00CED1']
+
+# Add markers to map
+for lat, lng, label,distr in zip(shanghai_data['Latitude'],
+                                 shanghai_data['Longitude'],
+                                 shanghai_data['Neighborhood'],
+                                 shanghai_data['District']):
+    label = folium.Popup(label, parse_html=True)
+    folium.CircleMarker(
+        [lat, lng],
+        radius=5,
+        popup=label,
+        color=rainbow[Districts.index(distr)-1],
+        fill=True,
+        fill_color=rainbow[Districts.index(distr)-1],
+        fill_opacity=0.8,
+        parse_html=False).add_to(map_shanghai_neighborhoods)  
+
+# Return the map    
+map_shanghai_neighborhoods
+# Upload the screenshot of the map created above
+# Location
+path="D:/Learning/Applied Data Science/Course 4 Applied Data Science Capstone/Week 4 and 5 Project/"
+Image(filename=path+"Shanghai All Neighborhoods Map.png")
+
+CLIENT_ID = '' # I intentionally deleted my ID and secret for the preservation of my privacy
+CLIENT_SECRET = '' 
+VERSION = '20180605' # Foursquare API version
+LIMIT=200 # limit of number of venues returned by Foursquare API
+radius=500 # define radius
+
+def getNearbyVenues(names, latitudes, longitudes, radius=500):
+    
+    venues_list=[]
+    for name, lat, lng in zip(names, latitudes, longitudes):
+        print(name)
+            
+        # create the API request URL
+        url = 'https://api.foursquare.com/v2/venues/explore?&client_id={}&client_secret={}&v={}&ll={},{}&radius={}&limit={}'.format(
+            CLIENT_ID, 
+            CLIENT_SECRET, 
+            VERSION, 
+            lat, 
+            lng, 
+            radius, 
+            LIMIT)
+            
+        # make the GET request
+        results = requests.get(url).json()["response"]['groups'][0]['items']
+        
+        # return only relevant information for each nearby venue
+        venues_list.append([(
+            name, 
+            lat, 
+            lng, 
+            v['venue']['name'], 
+            v['venue']['location']['lat'], 
+            v['venue']['location']['lng'],  
+            v['venue']['categories'][0]['name']) for v in results])
+
+    nearby_venues = pd.DataFrame([item for venue_list in venues_list for item in venue_list])
+    nearby_venues.columns = ['Neighborhood', 
+                  'Neighborhood Latitude', 
+                  'Neighborhood Longitude', 
+                  'Venue', 
+                  'Venue Latitude', 
+                  'Venue Longitude', 
+                  'Venue Category']
+    
+    return(nearby_venues)
+    
+    shanghai_venues = getNearbyVenues(names=shanghai_data['Neighborhood'],
+                                  latitudes=shanghai_data['Latitude'],
+                                  longitudes=shanghai_data['Longitude'])
+                                  
+                                  shanghai_venues_district=pd.merge(shanghai_venues,shanghai_data[['District','Neighborhood']],how='left',on='Neighborhood')
+                                  
+                                  print("The shape of the dataframe is {}. The dataset has {} rows.".format
+      (shanghai_venues_district.shape,shanghai_venues_district.shape[0]))
+shanghai_venues_district.head()
+
+# Split Neighborhood column. Want a new Neighborhood column which does not contain the word "Shanghai"
+shanghai_venues_district[['Neighborhood2','Shanghai']]=shanghai_venues_district['Neighborhood'].str.split(',',expand=True)
+
+# Drop Shanghai column
+shanghai_venues_district.drop(['Shanghai'],axis=1,inplace=True)
+
+# Create a function that visualizes venues
+def draw_map(data,zoom_para):
+    
+    # Base map
+    map_shanghai=folium.Map(location=[latitude, longitude], zoom_start=zoom_para,tiles="OpenStreetMap")
+    
+    Districts=['Pudong','Huangpu','Xuhui','Changning',"Jing'an",
+           'Putuo','Hongkou','Yangpu','Minhang','Baoshan','Jiading',
+           'Jinshan','Songjiang','Qingpu','Fengxian','Chongming']
+    
+    rainbow=['#00008B','#008B8B','#B8860B','#A9A9A9','#006400','#BDB76B',
+         '#8B008B','#556B2F','#FF8C00','#9932CC','#8B0000','#E9967A',
+         '#8FBC8F','#483D8B','#2F4F4F','#00CED1']
+    
+    for lat, lng, label,distr,nb in zip(data['Venue Latitude'],
+                                        data['Venue Longitude'],
+                                        data['Venue'],
+                                        data['District'],
+                                        data['Neighborhood2']):
+        label = folium.Popup(str(label)+', '+str(nb)+', '+str(distr), parse_html=True)
+        
+        folium.CircleMarker(
+        [lat, lng],
+        radius=5,
+        popup=label,
+        color=rainbow[Districts.index(distr)-1],
+        fill=True,
+        fill_color=rainbow[Districts.index(distr)-1],
+        fill_opacity=0.2,
+        parse_html=False).add_to(map_shanghai)  
+    
+    return(map_shanghai)
+    
+    # Draw map using venues data
+draw_map(shanghai_venues_district,11)
+# Group by and count the number of venues within each neighborhood
+shanghai_venues_count_list=shanghai_venues_district.groupby('Neighborhood')['Venue'].count().to_frame() # series to data frame
+# Change column name
+shanghai_venues_count_list.rename(columns={'Venue':'Number of Venues'},inplace=True)
+
+# Show top 5 neighborhoods that have the highest number of venues
+shanghai_venues_count_list.sort_values(by=['Number of Venues'],ascending=False).head()
+# Show top 5 neighborhoods that have the lowest number of venues
+shanghai_venues_count_list.sort_values(by=['Number of Venues'],ascending=False).tail()
+
+# Group by and count the number of venues within each venue category
+shanghai_popular_venues=shanghai_venues_district.groupby('Venue Category')['Venue'].count().to_frame()
+# Change column name
+shanghai_popular_venues.rename(columns={'Venue':'Number of Venues'},inplace=True)
+# Show top 5 categories that have the highest number of venues
+shanghai_popular_venues.sort_values(by=['Number of Venues'],ascending=False).head(5)
+
+# One hot encoding
+shanghai_onehot = pd.get_dummies(shanghai_venues_district[['Venue Category']], prefix="", prefix_sep="")
+
+# Add neighborhood column back to dataframe
+shanghai_onehot['Neighbourhood']=shanghai_venues_district['Neighborhood']
+# Note: In the lab, the column name in the dummy variale df is the same as the one in no-dv df. Here it won't work.
+# Column names must be different.
+
+# Move Neighborhood column to the first column
+fixed_columns = [shanghai_onehot.columns[-1]] + list(shanghai_onehot.columns[:-1])
+shanghai_onehot = shanghai_onehot[fixed_columns]
+
+# Check the number of rows. It must be equal to that of shanghai_venues_district
+print("The shape of the dataframe is {}. The dataset has {} rows.".format
+      (shanghai_onehot.shape,shanghai_onehot.shape[0]))
+
+# print top 5 rows
+shanghai_onehot.head()
+
+# Group by
+shanghai_grouped=shanghai_onehot.groupby('Neighbourhood').mean().reset_index()
+
+# Check the shape of shanghai_grouped. The number of rows must be equal to that of shanghai_data (both dfs are grouped by neighborhood)
+print("The shape of the dataframe is {}. The dataset has {} rows.".format
+      (shanghai_grouped.shape,shanghai_grouped.shape[0]))
+# Note: here the row number is smaller than the row number of shanghai_data (45<47) because two obs are dropped due to lack of data
+
+# Print the top 5 rows
+shanghai_grouped.head()
+# Note: The sum of all column values for each row is 1 (100%). The number in each cell is relative frequency
+
+# Find the largest number within all columns
+shanghai_grouped['Most Popular Venue']=shanghai_grouped.iloc[:,1:157].idxmax(axis=1)
+
+# Remove Most Popular Venue column to the front
+fixed_columns=[shanghai_grouped.columns[0]]+[shanghai_grouped.columns[-1]]+list(shanghai_grouped.columns[1:157])
+shanghai_grouped=shanghai_grouped[fixed_columns]
+
+# Only need Neighbourhood and Most Popular Venues columns from shanghai_grouped. Also need Neighborhood Chinese Name column from shanghai_data
+most_popular=pd.merge(shanghai_grouped[['Neighbourhood','Most Popular Venue']],
+                      shanghai_data[['Neighborhood','Neighborhood Chinese Name']],
+                      how='left',
+                      left_on='Neighbourhood',right_on='Neighborhood')
+
+most_popular.drop(['Neighborhood'],axis=1,inplace=True)
+
+# Move Neighborhood Chinese Name to the front
+fixed_columns=[most_popular.columns[0]]+[most_popular.columns[-1]]+[most_popular.columns[1]]
+most_popular=most_popular[fixed_columns]
+
+# Show the most popular venue within each neighborhood
+most_popular
+
+# Add District to shanghai_grouped first. District will be the key
+shanghai_grouped_with_district=pd.merge(shanghai_grouped,shanghai_data[['District','Neighborhood']],how='left',
+                                       left_on='Neighbourhood',right_on='Neighborhood')
+
+shanghai_grouped_with_district.drop(['Neighborhood_y'],axis=1,inplace=True)
+
+# Then import economic data
+shanghai_grouped_econ=pd.merge(shanghai_grouped_with_district,shanghai_econ,how='left',on='District')
+
+# Drop all text columns. Prepare for clustering
+shanghai_grouped_clustering=shanghai_grouped_econ.drop(['Neighbourhood','Most Popular Venue','District'],axis=1)
+# All columns in shanghai_grouped_clustering are numeric
+
+# Set dependent variable and independent variables
+y=shanghai_grouped_clustering['GDP PP']
+X=shanghai_grouped_clustering.loc[:,shanghai_grouped_clustering.columns!='GDP PP']
+
+within_cluster_variance = []
+
+for k in range(2, 20):
+    kmeans = KMeans(n_clusters=k)
+    kmeans.fit(X)
+    within_cluster_variance.append(kmeans.inertia_)
+
+fig = plt.figure(figsize=(15, 5))
+plt.plot(range(2, 20), within_cluster_variance, marker='o')
+plt.grid(True)
+plt.xlabel('Number of clusters')
+plt.ylabel('Reduction in within cluster variation')
+plt.gca().spines['top'].set_visible(False)
+plt.gca().spines['right'].set_visible(False)
+plt.title('Elbow Curve')
+
+# According to the elbow curve, pick 5 as the optimal number of clusters
+kmeans=KMeans(n_clusters=5)
+# Fit
+kmeans.fit(X)
+# Generate cluster 
+y_kmeans=kmeans.predict(X)
+# Attach cluster label to shanghai_grouped_econ. Now all neighborhoods have certain clusters assigned
+shanghai_grouped_econ['Cluster']=y_kmeans
+
+# Left Join
+shanghai_merged=pd.merge(shanghai_grouped_econ,
+                         shanghai_data[['Neighborhood','Neighborhood Chinese Name','Latitude','Longitude']],
+                         how='left',
+                         left_on='Neighbourhood',right_on='Neighborhood')
+# Drop redundant Neighborhood column
+shanghai_merged.drop(['Neighborhood'],axis=1,inplace=True)
+# Final dataset. It has neighborhood level geographic, economic and demographic information as well as cluster label
+shanghai_merged.head()
+
+map_clusters = folium.Map(location=[latitude, longitude], zoom_start=11)
+
+kclusters=5
+
+# set color scheme for the clusters
+x = np.arange(kclusters)
+ys = [i + x + (i*x)**2 for i in range(kclusters)]
+colors_array = cm.rainbow(np.linspace(0, 1, len(ys)))
+rainbow = [colors.rgb2hex(i) for i in colors_array]
+
+# add markers to the map
+markers_colors = []
+for lat, lon, nb, nbcn,cluster in zip(shanghai_merged['Latitude'], shanghai_merged['Longitude'],shanghai_merged['Neighbourhood'],shanghai_merged['Neighborhood Chinese Name'],shanghai_merged['Cluster']):
+    label = folium.Popup(str(nb) + " ("+str(nbcn)+') '+ ' / Cluster ' + str(cluster), parse_html=True)
+    folium.CircleMarker(
+        [lat, lon],
+        radius=5,
+        popup=label,
+        color=rainbow[cluster-1],
+        fill=True,
+        fill_color=rainbow[cluster-1],
+        fill_opacity=1.0).add_to(map_clusters)
+       
+map_clusters
+
+def statistics(shanghai_merged,num):
+    
+    print(' Average GDP PP of this cluster is {:.1f} yuan.\n Average personal monthly salary of this cluster is {:.1f} yuan/month.\n Average home price of this cluster is {:.1f} yuan/square meter.'.format
+     (shanghai_merged[shanghai_merged['Cluster']==num]['GDP PP'].mean(axis=0),
+     shanghai_merged[shanghai_merged['Cluster']==num]['Salary'].mean(axis=0),
+     shanghai_merged[shanghai_merged['Cluster']==num]['Home Price'].mean(axis=0)))
+    
+    return(shanghai_merged[shanghai_merged['Cluster']==num][['Neighbourhood','Neighborhood Chinese Name','District']])
+    
+  
