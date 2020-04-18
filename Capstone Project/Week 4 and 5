@@ -1,0 +1,51 @@
+Part 2: Data
+The project uses two datasets, namely shanghai_demo and shanghai_data.
+
+shanghai_demo contains demographic information of all 16 districts (区) in Shanghai. It has 6 variables: District, Population Density, Salary, Home Price, GDP and GDP Per Capita.
+
+In shanghai_demo dataset, District is a character column. It lists Shanghai's 16 districts. Population Density (person/square kilometer) is density of population in 2017 (data source: Shanghai Statistical Yearbook 2018). Salary (RMB/month) stands for personal monthly salary in 2019 (data source: Sohu). Home Price (RMB/square meter) is from the same source (Sohu). GDP (billion RMB) column has district level GDP in 2018 (data source: Sohu). Finally, GDP Per Capita (RMB) (year 2017 data) is sourced from 好金贵财经.
+
+Note that all data are from different sources and are in different years. This is because it is extremely hard to find one single source that provides related district-level data. This is the most severe fallacy of this project, but this would not affect the results too greatly given that the data would not change too much within 1 to 2 years if the accuracy of data is fully guaranteed.
+
+# Import library
+import pandas as pd
+
+# Read shanghai_demo dataset
+shanghai_demo=pd.read_csv("D:\Learning\Applied Data Science\Course 4 Applied Data Science Capstone\Week 4 and 5 Project\Shanghai District.csv")
+
+# Print all rows of shanghai_demo
+shanghai_demo
+
+shanghai_data lists prominent neighborhoods in Shanghai (in both English and Chinese) as well as the districts they belong to. It has three variables: District, Neighborhood and Neighborhood Chinese Name.
+
+It is necessary to highlight that there is no such concept as "neighborhood" (社区) in Shanghai. "Neighborhood" is essentially a "western" concept and is not used to indicate the same thing in China. In the country, a "neighborhood" is more like a "residential community" (小区) that only has residential buildings rather than a large area that has shopping malls, stores, restaurants and attractions (and of course resdential communities). An equivalent concept, in Shanghai, is in fact "subdistrict" (街道).
+
+"Subdistrict," however, is still not entirely the same as "neighborhood" in the western world. For instance, Wujiaochang (五角场) in Yangpu District is essentially a subdistrict ("五角场街道") in Shanghai's township-level divisions hierarchy and can be treated as a neighborhood to an extent. In contrast, the famous Xintiandi (新天地), an area full of delicacy, art, decent food and fashion in Huangpu District, is not a subdistrict but can be thought as a neighborhood.
+
+Nevertheless, the report adopts the western convention and focuses on a total of 47 neighborhoods (subdistricts/towns) across 16 districts in Shanghai. The author built shanghai_data based on his own discretion.
+
+# Read file
+shanghai_data=pd.read_excel("D:\Learning\Applied Data Science\Course 4 Applied Data Science Capstone\Week 4 and 5 Project\Shanghai Neighborhood.xlsx")
+
+# Print all rows of shanghai_data
+shanghai_data
+
+import geopy
+from geopy.geocoders import Nominatim
+
+geolocator=Nominatim(user_agent="shanghai_explorer")
+
+# Attach string ', Shanghai' to Neighborhood column
+shanghai_data['Neighborhood']=shanghai_data['Neighborhood']+', Shanghai'
+# This is for the location precesion concern
+
+# Get coordinates
+shanghai_data['Coordinates']=shanghai_data['Neighborhood'].apply(geolocator.geocode).apply(lambda x: (x.latitude, x.longitude))
+
+# Seperate Coordinates column into latitude and longitude columns
+shanghai_data[['Latitude','Longitude']]=shanghai_data['Coordinates'].apply(pd.Series)
+
+# Drop Coordinates column
+shanghai_data.drop(['Coordinates'],axis=1,inplace=True)
+
+shanghai_data.head(10)
