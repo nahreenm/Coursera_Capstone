@@ -1,0 +1,9 @@
+Calculate the sum of 1 plus 1
+In [4]: 1 + 1
+Out[4]: 2
+
+Student	Grade
+John Smith	90
+Jane Doe	  95
+
+"I should study more" - John Smith
